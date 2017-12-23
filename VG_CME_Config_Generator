@@ -6,6 +6,9 @@ Created on Dec 21, 2017
 
 
 ###############################################################################################
+#    This is a python script to generate CME confgiration relevant to VG224/310/320/350       #
+#    You need to run this using python 3.x. Python 2.x will generate errors                   # 
+#                                                                                             #
 #    If you are using SCCP registration to register VG224/VG310/VG320/VG350 to CME, this      #
 #    script will generate the Ephone and Ephone-dn configuration to be applied to CME.        #
 #                                                                                             #
