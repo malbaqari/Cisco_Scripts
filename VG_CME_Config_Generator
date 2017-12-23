@@ -1,0 +1,137 @@
+'''
+Created on Dec 21, 2017
+
+@author: mohammed.baqari
+'''
+
+
+###############################################################################################
+#    If you are using SCCP registration to register VG224/VG310/VG320/VG350 to CME, this      #
+#    script will generate the Ephone and Ephone-dn configuration to be applied to CME.        #
+#                                                                                             #
+#    The script will perform all binary and hex conversions to generate the mac address of    #
+#    each Ephone/Ephone-dn. It will assign the DNs to Ephones automatically.                  #
+#                                                                                             #
+#    The script assumes that you completed the configuration of VG unit using SCCP mode       #
+#    and you obtained the mac address of the SCCP interface. Also, the script assumes the     #
+#    you have CSV file containing the names, numbers and ports for the users.                 #
+#                                                                                             #
+#    The CSV file should be named as 'phone list.csv' and should have the following           #
+#    structure:                                                                               #
+#                                                                                             #
+#    NAME,NUMBER,PORT                                                                         #
+#    BARGE ENGINEER,124,0/0/1                                                                 #
+#    BILGE PUMP ROOM,123,0/0/2                                                                #
+#                                                                                             #
+#    The header of the CSV should be upper case and the port number should be in the          #
+#    format 0/0/0                                                                             #
+#                                                                                             #
+#    The config file generated will be named as 'config_file.txt'                             #
+#                                                                                             #
+###############################################################################################
+
+import csv
+import os
+
+# This function gets the port number and perform the following:
+#    - It will generate a list containing 3 elements (slot_number, sub_slot_number, port_number)
+#    - The slot number will be converted to 8-bits binary and use the least 3 bits
+#    - The sub slot number will be converted to 8-bits binary and use the least 2 bits
+#    - The port number will be converted to 8-bits binary and use the least 7 bits
+#    - The binary digits will be combined to generate 12-bits binary number
+#    - 12-bits binary will be converted to 3-digits hexadecimal 
+
+def convert_port_id_to_hex(port):
+    
+    port = port.split('/')
+        
+    port_slot = '{0:08b}'.format(int(port[0]))[5:]
+    port_sub_slot = '{0:08b}'.format(int(port[1]))[6:]
+    port_id = '{0:08b}'.format(int(port[2]))[1:]
+        
+    port_bin = port_slot + port_sub_slot + port_id  
+    
+    # The output will be in the form 0xa or 0x89. 0x will be stripped
+    port_hex = ("0x%x" % int(port_bin,2)).replace('0x','')
+    
+    # We need to make sure that we get 3-digits hex. If we get less than 3, we will pad with zeros
+    if len(port_hex)==1:
+        port_hex = '00{}'.format(port_hex)
+    if len(port_hex)==2:
+        port_hex = '0{}'.format(port_hex)
+
+    return (port_hex)
+        
+
+# This function gets the mac address of VG320 SCCP interface, for example, and perform the following:
+#    - It will strip the most 3-digits of the mac address
+#    - It will reorder the mac address to split each 4 digits with '.'
+#    - It will call port_hex function to get the hex value of the voice port
+#    - It will combine the port_hex with reformated SCCP mac address to obtain 48-bit mac address
+#      of the voice port
+
+def get_voice_port_mac(sccp_interface_mac, port):
+   
+    port_hex = convert_port_id_to_hex (port)
+    sccp_interface_mac = sccp_interface_mac.replace('.','')[3:]
+    voice_port_mac = sccp_interface_mac[0:4] + '.' + sccp_interface_mac[4:8]+ '.' + sccp_interface_mac[8:] + port_hex
+    
+    return (voice_port_mac)
+    
+dn = int(input('Enter the start DN: '))
+sccp_interface_mac = input('Enter the MAC Address of VG Unit SCCP interface: ')
+
+dn_initial = dn
+
+# Open the CSV file
+with open('phone list.csv', 'r+') as csv_file_read:
+    csv_reader = csv.DictReader(csv_file_read)
+    
+    # Generate config for each row in the CSV file
+    for line in csv_reader:
+ 
+        config_file = 'config_file.txt'
+        
+        # Read the attributes of each user
+        number = line.get('NUMBER')
+        name = line.get('NAME')
+        description = name + ' Phone'
+        port = line.get('PORT')
+        
+        voice_port_mac = get_voice_port_mac(sccp_interface_mac, port)
+        
+        # Check if the config file exists in the directory. If it exists it will open the file and write
+        # inside it. Otherwise, it will create new file for first time and write the first entry
+        directory_list=os.listdir()
+        
+        if (config_file in directory_list) == True:
+            with open('config_file.txt', 'r+') as config:
+                
+                # This step verifies if the file exists in the directory from the current run or previous
+                # run. If it exists from current run, it will continue writing in the file. If the file from
+                # previous run, it will delete the file contents and write the first entry
+                if dn == dn_initial:
+                    config.truncate()
+                    config.write('telephony-service\n\t max-ephone 100\n\t max-dn 200\n\t')
+                
+                # Since we are writing in existing file, we need to make sure that we start writing after
+                # the last entry in the file. Otherwise, the script will overwrite the existing contents
+                config.seek(0, 2)
+                config.write('''\n ephone-dn {} \n\t number {} \n\t name {} \n\t description {}
+                \n ephone {} \n\t mac-address {}  \n\t max-calls-per-button 2 \n\t type anl \n\t button  1:{}
+                '''.format(dn, number, name, description, dn, voice_port_mac, dn))
+                
+                config.close()
+
+        else:
+            with open('config_file.txt', 'xt') as config:
+                config.write('''telephony-service\n\t max-ephone 100\n\t max-dn 200\n\t
+                \n ephone-dn {} \n\t number {} \n\t name {} \n\t description {}  
+                \n ephone {} \n\t mac-address {}  \n\t max-calls-per-button 2 \n\t type anl \n\t button  1:{}
+                '''.format(dn, number, name, description, dn, voice_port_mac, dn))
+                config.close()
+        
+        dn +=1
+         
+        
+print ('\n\nConfiguration File Generated')
