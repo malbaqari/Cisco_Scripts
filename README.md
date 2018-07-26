@@ -1,2 +1,2 @@
 # Cisco_Scripts
-Here are some scripts I used to automate some Cisco configurations
+VG_CME_Config_Generator - Generates Cisco VG310/320/350 configuration to be applied to CME
